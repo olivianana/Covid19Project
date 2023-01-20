@@ -1,0 +1,549 @@
+---
+title: "final project1"
+author: "Waleed Khalid, Na Zhu"
+date: "2023-01-17"
+output: html_document
+---
+---
+title: "Final project"
+author: "Waleed Khalid, Na Zhu"
+date: "2022-12-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Aiming to explore the US COVID-19 deaths on National level, we aim to to find relationships between different health Attributes, Variables and Factors of Infected Individuals and explore the two data sets that we have selected for analysis, one is focused on when COVID 19 occurred and the other data set is focused on data gathered till Jan, 2023 having medical conditions in it. With respect to individual medical condition, we want to explore and find trends and relations between factors such COVID-19 death rate, people having pnemonea, people with influenza etc
+
+The data about Covid comes from "The New York Times," based on reports from state and local health agencies, and was brought from Kaggle and the other source of data is from the "CDA" Central Disease Control in United States for a deeper analysis and perspective. Finding relevant data was quiet the challenge but we were able to find suitable data. 
+
+Firstly we will analyze and clean the data which has the infection and death rate, we want to find the most affected and infected states in US over time, and later visualize that data as it is part of our project goals, we visualize the data and do analysis on national level after which we also investigate the relation between different factors of infection individuals in US.
+
+
+```{r, include=FALSE}
+
+library('dplyr')
+library('tidyverse')
+library('timetk')
+library('skimr')
+library('ggplot2')
+covid_data <- read_csv("../My Project R language/us-counties.csv", 
+                       show_col_types = FALSE)
+```
+```{r , include=TRUE}
+head(covid_data)
+```
+
+# Importing, Cleaning and Processing Data
+
+
+We cleaned and process the data set,
+before visual and analytical insights.
+
+
+```{r , include=FALSE}
+covid_data <- covid_data %>%
+  mutate('survivors' = cases-deaths, 
+         'fatality' = deaths/cases)
+
+covid_data <- covid_data %>%
+  group_by(county, state) %>%
+  mutate('l_cases' = dplyr::lag(cases, n = 1, default = 0), 
+         'l_deaths' = dplyr::lag(deaths, n = 1, default = 0), 
+         'daily_cases' = cases-l_cases,
+         'daily_deaths' = deaths-l_deaths)
+```
+
+Here is the summary of the dataset. 
+
+```{r , echo=FALSE}
+summary(covid_data)
+```
+
+As we  can  see in the summary above initial details.
+We added new columns then we grouped the data by county and state.
+we also added 'l_cases,' 'l_deaths,' 'daily_cases,' and 'daily_deaths' varaibles. 
+There are some negative number and NAs, that we need to do some processing on the data.
+ 
+
+### Cleaning and dealing with NAs in the Data
+
+We check to see which varaibles has NAs,
+so we can deal with them for better processing and visualization.
+
+```{r , include=FALSE}
+colSums(is.na(covid_data))
+
+```
+```{r , echo=FALSE}
+head(filter(covid_data, is.na(deaths)))
+```
+
+```{r , echo=FALSE}
+na <- covid_data %>%
+  filter(is.na(deaths))
+paste("All of the NAs for the deaths variable are in ", unique(na['state']))
+```
+```{r , echo=FALSE}
+covid_data <- covid_data %>%
+  filter(state != "Puerto Rico")
+colSums(is.na(covid_data))
+```
+
+
+### Dealing with the Impossible Jump Between Days
+
+We also deal with jump days as it can affect results.
+
+```{r , echo=FALSE}
+impossible <- covid_data %>%
+  filter(county != "Unknown") %>%
+  group_by(date) %>%
+  summarize(cases = sum(cases),
+            deaths = sum(deaths),
+            count_counties = n()) %>%
+  filter(date > "2021-05-30" & date < "2021-06-07")
+head(impossible)
+```
+
+```{r , echo=FALSE}
+finding_state <- covid_data %>%
+  filter(county != "Unknown") %>%
+  filter(date > "2021-06-02" & date < "2021-06-05") %>%
+  group_by(date, state) %>%
+  summarize(cases = sum(cases),
+            deaths = sum(deaths))
+
+finding_state <- finding_state %>%
+  group_by(state) %>%
+  summarize('first' = first(cases), 
+            'second' = last(cases))
+
+head(filter(finding_state, first > second))
+```
+```{r , echo=FALSE}
+paste0("The number of rows where a county had less than zero cases is ", nrow(filter(covid_data, daily_cases < 0)))
+```
+
+
+```{r , echo=FALSE}
+negatives <- (filter(covid_data, daily_cases < 0 & county != "Unknown")) %>%
+  group_by(county, state) %>%
+  summarize('count' = n())
+paste0("The number of counties that have this issue is ", nrow(negatives))
+head(filter(negatives, count > 100))
+```
+```{r , echo=FALSE}
+finding_state2 <- covid_data %>%
+  filter(date == "2022-03-14") %>%
+  group_by(state) %>%
+  summarize(cases = sum(cases),
+            deaths = sum(deaths)) %>% 
+  mutate('survivors' = cases-deaths,
+         'fatality' = deaths/cases,
+         'l_cases' = lag(cases, default = 0),
+         'daily_cases' = cases-l_cases,
+         'daily_cases_lag' = lag(daily_cases, default = 0, 14),
+         'l_deaths' = lag(deaths, default = 0),
+         'daily_deaths' = deaths-l_deaths,
+         'updated_fatality' = daily_deaths/daily_cases_lag)
+
+
+head(filter(finding_state2, daily_deaths < 0))
+```
+
+### Create New tables
+
+Now that we have dealt with the NAs we create a new table/df.
+
+```{r , echo=FALSE}
+latest_date <- covid_data %>%
+  filter(date == max(date))
+
+national <- covid_data %>%
+  group_by(date) %>%
+  summarize(cases = sum(cases),
+            deaths = sum(deaths)) %>% 
+  mutate('survivors' = cases-deaths,
+         'fatality' = deaths/cases,
+         'l_cases' = lag(cases, default = 0),
+         'daily_cases' = cases-l_cases,
+         'daily_cases_lag' = lag(daily_cases, default = 0, 14),
+         'l_deaths' = lag(deaths, default = 0),
+         'daily_deaths' = deaths-l_deaths,
+         'updated_fatality' = daily_deaths/daily_cases_lag)
+
+grouped_states <- latest_date %>%
+  group_by(state) %>%
+  summarize(cases = sum(cases),
+            deaths = sum(deaths)) %>%
+  mutate('survivors' = cases-deaths,
+         'fatality' = deaths/cases) 
+
+states_timeline = covid_data %>%
+  group_by(date, state) %>%
+  summarize(cases = sum(cases),
+            deaths = sum(deaths)) %>%
+  mutate('survivors' = cases-deaths,
+         'fatality' = deaths/cases,
+         'l_cases' = lag(cases, default = 0),
+         'daily_cases' = cases-l_cases,
+         'daily_cases_lag' = lag(daily_cases, default = 0, 14),
+         'l_deaths' = lag(deaths, default = 0),
+         'daily_deaths' = deaths-l_deaths,
+         'updated_fatality' = daily_deaths/daily_cases_lag)
+```
+
+### Investigating Spike in Numbers
+
+```{r , echo=FALSE}
+head(filter(national, date > "2021-09-10" & date < "2021-09-18"))
+```
+
+# Performing an Exploratory Dataset Analysis
+
+Now that we have cleaned the data and have dealt with the NAs,
+we will do a deep EDA
+
+National level covid diagnoses as can be seen below,
+The total covid deaths and diagnoses rise with time,
+but with the passage of time the fatalities decrease. 
+
+```{r , echo=FALSE}
+sapply(national, sd, na.rm = TRUE)
+```
+```{r , echo=FALSE}
+options(repr.plot.width = 20, repr.plot.height = 10)
+ggplot(data = national) +
+  geom_line(mapping = aes(x = date, y = cases), color = 'red') +
+  labs(title = "Total National Covid Diagnoses", x = "Date", y = "Total Cases Ever Diagnosed")
+```
+```{r , echo=FALSE}
+ggplot(data = national) +
+  geom_line(mapping = aes(x = date, y = deaths), color = 'red') +
+  labs(title = "Total National Covid Deaths", x = "Date", y = "Total Deaths")
+```
+```{r , echo=FALSE}
+ggplot(data = national) +
+  geom_line(mapping = aes(x = date, y = fatality)) +
+  labs(title = "Covid Fatality", x = "Date", y = "Total Fatality From Covid")
+```
+```{r , echo=FALSE}
+ggplot(data = national) +
+  geom_line(mapping = aes(x = date, y = daily_cases), color = 'blue') +
+  geom_smooth(mapping = aes(x = date, y = daily_cases), color = 'red', span = 0.35)+
+  labs(title = "Daily Covid Diagnoses", x = "Date", y = "Cases")
+```
+
+
+As it can be seen above in the Covid Diagnoses graph we draw a parallel black line to see the trend,
+and as it can be seen that with the passage of time the trend drops.
+
+```{r , echo=FALSE}
+national %>%
+  tk_acf_diagnostics(date, daily_cases, .ccf_vars = daily_deaths) %>%
+  select(lag, CCF_daily_deaths) %>%
+  slice(1:31)
+```
+```{r , echo=FALSE}
+ggplot(data = national) +
+  geom_line(mapping = aes(x = date, y = daily_deaths), color = 'red') +
+  geom_smooth(mapping = aes(x = date, y = daily_deaths), color = 'blue', span = 0.35) +
+  labs(title = "Daily Covid Deaths", x = "Date", y = "Deaths")
+```
+
+Same can be said in the case of Covid deaths, which means either with the passage of time the virus became weak,
+or people had developed an immunity.
+It can also be said that after winter season with less cases of pnemonea and influenza that cases became less fatel.
+
+
+### Analyzing and Visualizing By State
+
+We do visualization and see the deaths and cases on state level in US.
+
+```{r , echo=FALSE}
+options(repr.plot.width = 20, repr.plot.height = 10)
+ggplot(data = grouped_states) +
+  geom_col(mapping = aes(x = reorder(state, -cases), y = cases, fill = deaths)) + 
+  theme(axis.text.x=element_text(angle = 90)) +
+  labs(title = "Total Case Count Per State", x = "State", y = "Cases")
+
+```
+```{r , echo=FALSE}
+ggplot(data = grouped_states) +
+  geom_col(mapping = aes(x = reorder(state, -deaths), y = deaths, fill = cases)) + 
+  theme(axis.text.x=element_text(angle = 90)) +
+  labs(title = "Total Deaths by Covid Per State", x = "State", y = "Deaths")
+```
+```{r , echo=FALSE}
+ggplot(data = grouped_states) +
+  geom_point(mapping = aes(x = cases, y = deaths, color = state)) + 
+  theme(axis.text.x=element_text(angle = 90)) +
+  labs(title = "State Cases and Deaths", x = "Cases", y = "Deaths")
+```
+
+
+Aiming to examine outliers and top states by deaths we visualize the data,
+through a dot graph and bar plot which can be seen above and below.
+
+```{r , echo=FALSE}
+ggplot(data = grouped_states) +
+  geom_col(mapping = aes(x = reorder(state, -fatality), y = fatality, fill = cases)) + 
+  theme(axis.text.x=element_text(angle = 90)) +
+  labs(title = "Covid's Fatality By State", x = "State", y = "Fatality")
+```
+
+Here we visualize the fatality rate by state, here we see some difference when compared with deaths,
+it can be said some states have better medical facilities or it can be said that some states have healthier people.
+
+```{r , echo=FALSE}
+ggplot(data = states_timeline) +
+  geom_line(mapping = aes(x = date, y = cases, group = state, color = state)) +
+  labs(title = "Total Cases Over Time By State", x = "Date", y = "Cases")
+```
+
+
+We visualize the progress of cases and deaths overtime,
+for each states to obersve if there are some commonalities between them.
+
+```{r , echo=FALSE}
+ggplot(data = states_timeline) +
+  geom_line(mapping = aes(x = date, y = deaths, group = state, color = state)) +
+  labs(title = "Total Deaths Over Time By State", x = "Date", y = "Deaths")
+```
+
+We calculate the SD to measure the degree of dispersion of data.
+
+```{r , echo=FALSE}
+standard_deviation_states <- states_timeline %>%
+  group_by(state) %>%
+  summarize('cases_sd' = sd(cases), 'deaths_sd' = sd(deaths), 'daily_cases_sd' = sd(daily_cases), 'daily_deaths_sd' = sd(daily_deaths))
+head(standard_deviation_states)
+```
+
+
+### Covid-19 Cases Visualization via Map
+
+We visualize the data on a US National Map
+
+```{r ,echo=FALSE}
+
+library(usmap)
+
+df <- data.frame(
+  state = grouped_states$state,
+  values = grouped_states$cases
+)
+
+plot_usmap(data = df, color = "red") + scale_fill_gradient2(low='white',high='red')
+
+ 
+```
+
+
+# Finding Relationships between Medical conditions and variables
+
+Adjusting and cleaning dateset with varaibles of medical conditions,
+We aim find relation in the CDA gathered US data based on the previous observations.  
+
+
+
+```{r , echo=FALSE}
+library('dplyr')
+library('tidyverse')
+covid_data2 <- read_csv("../My Project R language/Provisional_COVID-19_Deaths_by_Sex_and_Age.csv", 
+                       show_col_types = FALSE)
+head(covid_data2)
+
+covid_dataNew <- covid_data2 %>%
+                select(-Year, -Month, -Footnote)
+head(covid_dataNew)
+
+covid_dataNew1 <- covid_dataNew %>%
+                  filter(State != 'United States')%>%
+                  filter(Sex =='All Sexes'& `Age Group` =='All Ages')
+colnames(covid_dataNew1)[colnames(covid_dataNew1) %in% c('Age Group','COVID-19 Deaths','Total Deaths','Pneumonia Deaths','Pneumonia and COVID-19 Deaths','Influenza Deaths','Pneumonia, Influenza, or COVID-19 Deaths')] <- c('AgeGroup','COVID19Deaths','TotalDeaths','PneumoniaDeaths','PneumoniaAndCOVID19Deaths','InfluenzaDeaths','PneumoniaInfluenzaOrCOVID19Deaths')
+view(covid_dataNew1)
+```
+
+## Cleaning and dealing with NAs in the Data
+
+```{r , echo=FALSE}
+colSums(is.na(covid_dataNew1))
+
+```
+```{r , echo=FALSE}
+head(filter(covid_dataNew1, is.na( PneumoniaDeaths )))
+```
+
+```{r , echo=FALSE}
+na <- covid_dataNew1 %>%
+  filter(is.na(PneumoniaDeaths))
+paste("All of the NAs for the deaths variable are in ", unique(na['State']))
+```
+
+```{r , echo=FALSE}
+
+ covid_dataNew1 <- covid_dataNew1 %>%
+  filter(State != "Delaware" & State != "District of Columbia" & State != "Hawaii" & State != "Idaho" & State != "Indiana" & State != "Louisiana" & State != "Nebraska" & State != "North Dakota" & State != "Rhode Island" & State != "Utah" & State != "Vermont" & State != "Wyoming")
+colSums(is.na(covid_dataNew1))
+```
+```{r ,echo=FALSE}
+na <- covid_dataNew1 %>%
+  filter(is.na(TotalDeaths ))
+paste("All of the NAs for the deaths variable are in ", unique(na['State']))
+```
+```{r , echo=FALSE}
+
+covid_dataNew1 <- covid_dataNew1 %>%
+  filter(State != "Alaska")
+covid_dataNew1["COVID19Deaths"][is.na(covid_dataNew1["COVID19Deaths"])] <- 0
+colSums(is.na(covid_dataNew1))
+
+covid_dataNew1 <- covid_dataNew1 %>%
+      select(-PneumoniaAndCOVID19Deaths, -InfluenzaDeaths )
+
+view(covid_dataNew1)
+
+```
+# RQ1:Are covid-19 deaths related with PneumoniaDeaths relation between deaths and medical condition
+
+##  Corealtion Analysis 
+
+Here we want to explore the relatationship of Covid19 deaths and Pnemonia deaths. 
+First, we visualize the two variables to their relationship.
+
+```{r , echo=FALSE}
+ggplot(covid_dataNew1, aes(x=COVID19Deaths, y=PneumoniaDeaths)) + geom_point() +
+  geom_smooth(method=lm)  
+```
+
+From the visualization we can see that the variable have strong positive relation.
+
+
+```{r , echo=FALSE}
+
+hist(covid_dataNew1$COVID19Deaths, main = "Histogram for COVID-19 Deaths", xlab = "COVID-19 Deaths")
+
+```
+```{r , echo=FALSE}
+
+hist(covid_dataNew1$PneumoniaDeaths, main = "Histogram for Pneumonia Deaths", xlab = "Pneumonia Deaths")
+
+```
+
+From the histograms,
+The data in both variables do not follow a normal distribution. 
+Since it's a large sample we can assume normality.
+
+
+## Hypothesis test
+
+### State the null hypothesis and the alternative hypothesis
+*Null hypothesis:* the correlation coefficient is not significantly different from 0. There is no significant linear relationship between `COVID19Deaths` and `PneumoniaDeaths` in the population.
+
+*Alternative hypothesis:* the population correlation coefficient is significantly different from 0. There is a significant linear relationship between `COVID19Deaths` and `PneumoniaDeaths` in the population.   
+
+
+### Check the assumption of the chosen statistical test. Perform the required statistical test.
+
+Here we will calculate correlation coefficient of the two variables in order to explore the relationship between the two variables.
+
+```{r, echo=FALSE}
+cor <- cor(covid_dataNew1$COVID19Deaths,covid_dataNew1$PneumoniaDeaths)
+cor <- round(cor,2)
+cor
+cor.test(covid_dataNew1$COVID19Deaths,covid_dataNew1$PneumoniaDeaths)
+```
+
+### Decide whether to reject or fail to reject your null hypothesis, report selected significance level.  
+The p-value of the correlation test between these 2 variables is 2.2e-16. P value is below cutoff of 0.05, 
+so we reject the null hypothesis of no correlation.
+
+### Interpret and report the results. 
+
+We can reject the null hypothesis that there is no relationship between COVID19Deaths and PneumoniaDeaths, 
+Therefore, we conclude that people have existing medical factor such as pnemonea will have higher chance of fatality.
+Pearson correlation test revealed that the amount of people having medical condition and dcrease covid 19 life expectancy in in US and its positively correlated, This correlation is strong and positive, meaning if number of people with medical conditions increase covid deaths will also increase.
+
+
+
+
+# RQ2:Are covid-19 deaths has linear relationship wiith PneumoniaInfluenzaOrCOVID19Deaths 
+
+## linear regression
+
+Now we perform linear regression to find the relations of Covid-19 deaths and Pnemoneainfluzenza based deaths.
+
+
+### Creating a Scatterplot to check for Linear Relationship
+
+First, we create a scatterplot to check for linear relationship of the two varialbes.
+
+```{r, echo=FALSE}
+library('dplyr')
+library('tidyverse')
+covid_dataNew1 <- as_tibble(covid_dataNew1)
+ggplot(covid_dataNew1, aes(x=COVID19Deaths, y=PneumoniaInfluenzaOrCOVID19Deaths )) + 
+  geom_point(size=4, shape=16) +
+  geom_smooth(method=lm) +
+  labs(title = "Relationship between COVID19 Deaths and Pneumonia,Influenza Or COVID19Deaths") 
+
+```
+
+### Calculating correlation
+
+Here we calculate the correlation of the two varialbes. they have stong positive relationship.
+
+```{r, echo=FALSE}
+corr <- cor(covid_dataNew1$COVID19Deaths, covid_dataNew1$PneumoniaInfluenzaOrCOVID19Deaths)
+corr
+```
+
+
+### Creating a boxplot to check for Outliers
+
+Here we create two boxplot to check for outliers of the two variables. we can see both the two variables have a few outliers.
+```{r, echo=FALSE}
+boxplot(covid_dataNew1$COVID19Deaths)
+boxplot(covid_dataNew1$PneumoniaInfluenzaOrCOVID19Deaths)
+```
+
+### Fit simple Linear Regression Model
+
+We apply the linear regression Model to the two varialbes.
+
+```{r, echo=FALSE}
+model <- lm(PneumoniaInfluenzaOrCOVID19Deaths~COVID19Deaths, data=covid_dataNew1)
+summary(model)
+```
+```{r, echo=FALSE}
+#define residuals of model
+res <- resid(model)
+
+#produce residual vs. fitted plot
+plot(fitted(model), res)
+#add a horizontal line at 0 
+abline(0,0)
+# or do the same with ggplot
+ggplot(model, aes(x = .fitted, y = .resid))+
+  geom_point() +
+  geom_hline(yintercept = 0) +
+  labs(title='Residual vs. Fitted Values Plot', x='Fitted Values', y='Residuals')
+
+```
+
+
+From the results we observe that Covid 19 deaths have linear relation with,
+medical variables such as Inflenze and pnemonea deaths. There is clear pattern, which indicates that the assumption
+relation is met and true. In other words, the coefficients of the regression model should be trustworthy and we don’t need to perform a transformation on the data.
+
+# Conclusion
+
+We explored the data on national level from US and visualized and presented key details,
+after preforming Processing and Cleaing, we were able to find relations and trend setters in the dataset,
+We performed visualization and analysis on the data, we presented and found out the top states with respect to fatalites and infected cases over time, after that we processed the data and aimed to find relation between Covid deaths and people with existing medical condition, such that can we found through hypothesis testing and linear regression that there is strong relaton between  number of covid deaths on national and state level and of deaths of people with existing medical conditions. We conclude that there is strong corelation between covid deaths and exsiting medical conditon such as pnemonea and influenze influce the number of deaths over time.
